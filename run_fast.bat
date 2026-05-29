@@ -1,0 +1,3 @@
+@echo off
+echo Starting InterviewAI (Optimized)...
+python -m streamlit run ui/app.py --server.runOnSave false

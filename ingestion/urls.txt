@@ -1,0 +1,3 @@
+https://www.geeksforgeeks.org/python-interview-questions
+https://www.geeksforgeeks.org/java-interview-questions
+https://www.interviewbit.com/sql-interview-questions

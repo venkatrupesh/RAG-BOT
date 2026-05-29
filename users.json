@@ -1,0 +1,32 @@
+{
+  "Rupesh123": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "email": "rushirupesh578@gmail.com",
+    "created": "2026-05-23 18:57",
+    "interviews": 1
+  },
+  "venkat": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "email": "123@gmail.com",
+    "created": "2026-05-23 19:42",
+    "interviews": 0
+  },
+  "alice": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "email": "123@gmail.com",
+    "created": "2026-05-25 19:48",
+    "interviews": 0
+  },
+  "Rupesh": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "email": "vnkt@gmail.com",
+    "created": "2026-05-27 12:01",
+    "interviews": 0
+  },
+  "Rushi": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "email": "456@gmail.com",
+    "created": "2026-05-28 21:55",
+    "interviews": 0
+  }
+}
