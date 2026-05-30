@@ -11,6 +11,10 @@ sys.path.append(".")
 from groq import Groq
 from dotenv import load_dotenv
 from retrieval.retriever import retrieve_context
+from database.db_manager import (
+    get_user, create_session, save_message, end_session, 
+    get_user_sessions, get_session_conversation
+)
 
 # Try to import voice interview (optional)
 try:
@@ -26,7 +30,7 @@ st.set_page_config(
     page_title="InterviewAI",
     page_icon="💬",
     layout="wide",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded"
 )
 
 st.markdown("""
@@ -176,8 +180,9 @@ st.markdown("""
 
     /* ── Sidebar ── */
     [data-testid="stSidebar"] {
-        background: #ffffff;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
         border-right: 1px solid #e5e7eb;
+        padding: 1.5rem 1rem;
     }
 
     [data-testid="stSidebar"] .stMarkdown h3 {
@@ -196,21 +201,99 @@ st.markdown("""
     [data-testid="stSidebar"] .stSelectbox > div > div,
     [data-testid="stSidebar"] .stSelectbox > div > div:focus {
         border: 1px solid #d1d5db !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         font-size: 0.88rem !important;
-        box-shadow: none !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
+        background: #ffffff !important;
+        transition: all 0.2s ease;
+    }
+    
+    [data-testid="stSidebar"] .stSelectbox > div > div:hover {
+        border-color: #9ca3af !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.08) !important;
     }
 
+    /* Sidebar Radio Buttons */
+    [data-testid="stSidebar"] .stRadio > div {
+        background: #ffffff;
+        border-radius: 10px;
+        padding: 0.5rem;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+    
+    [data-testid="stSidebar"] .stRadio > div label {
+        padding: 0.6rem 0.8rem !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease;
+    }
+    
+    [data-testid="stSidebar"] .stRadio > div label:hover {
+        background: #f3f4f6 !important;
+    }
+
+    /* Sidebar Buttons - Professional Clean Style */
     [data-testid="stSidebar"] .stButton > button {
         background: #ffffff;
         color: #374151;
-        border: 1px solid #e5e7eb;
-        font-size: 0.85rem;
+        border: 1.5px solid #e5e7eb;
+        font-size: 0.88rem;
+        font-weight: 600;
+        padding: 0.75rem 1.2rem;
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        transition: all 0.25s ease;
+        letter-spacing: 0.01em;
     }
 
     [data-testid="stSidebar"] .stButton > button:hover {
         background: #f9fafb;
         border-color: #d1d5db;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+        transform: translateY(-1px);
+    }
+    
+    [data-testid="stSidebar"] .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    /* New Interview Button - Blue Accent */
+    [data-testid="stSidebar"] button[key="new_interview_btn"] {
+        background: #3b82f6 !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25) !important;
+    }
+    
+    [data-testid="stSidebar"] button[key="new_interview_btn"]:hover {
+        background: #2563eb !important;
+        box-shadow: 0 4px 10px rgba(59, 130, 246, 0.35) !important;
+    }
+
+    /* History Button - Neutral with Icon */
+    [data-testid="stSidebar"] button[key="history_btn"] {
+        background: #ffffff !important;
+        color: #374151 !important;
+        border: 1.5px solid #e5e7eb !important;
+    }
+    
+    [data-testid="stSidebar"] button[key="history_btn"]:hover {
+        background: #f3f4f6 !important;
+        border-color: #d1d5db !important;
+    }
+
+    /* Sign Out Button - Clean Red Accent */
+    [data-testid="stSidebar"] button[key="signout_btn"] {
+        background: #ffffff !important;
+        color: #dc2626 !important;
+        border: 1.5px solid #fecaca !important;
+    }
+    
+    [data-testid="stSidebar"] button[key="signout_btn"]:hover {
+        background: #fef2f2 !important;
+        border-color: #fca5a5 !important;
+        color: #b91c1c !important;
     }
 
     /* ── Chat ── */
@@ -418,11 +501,12 @@ def register_user(username: str, password: str, email: str) -> tuple[bool, str]:
     return True, "Account created! You can now sign in."
 
 def login_user(username: str, password: str) -> tuple[bool, str]:
-    users = load_users()
-    if username not in users:
+    user = get_user(username)
+    if not user:
         return False, "Username not found."
-    if users[username]["password"] != hash_password(password):
+    if user[2] != hash_password(password):
         return False, "Incorrect password."
+    st.session_state.user_id = user[0]
     return True, "Login successful!"
 
 # ── Interview Logic ──
@@ -455,6 +539,8 @@ def init_session():
     defaults = {
         "logged_in": False,
         "username": "",
+        "user_id": None,
+        "current_session_id": None,
         "history": [],
         "topic": "Python",
         "difficulty": "Intermediate",
@@ -464,7 +550,7 @@ def init_session():
         "score": 0,
         "total_questions": 0,
         "pending_answer": None,
-        "sidebar_visible": True,
+        "show_history": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -536,51 +622,33 @@ def show_login():
 # MAIN CHAT INTERFACE
 # ══════════════════════════════════════════════════════════════════════════
 def show_chat():
-    # ── Sidebar Toggle ──
-    toggle_col1, toggle_col2 = st.columns([0.05, 0.95])
-    with toggle_col1:
-        if st.button("☰", key="sidebar_toggle"):
-            st.session_state.sidebar_visible = not st.session_state.sidebar_visible
-
-    # Inject CSS to hide/show sidebar
-    if not st.session_state.sidebar_visible:
-        st.markdown("""
-        <style>
-            [data-testid="stSidebar"] {
-                display: none !important;
-            }
-            .main .block-container {
-                padding-left: 1rem !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-    
     topic      = st.session_state.topic
     difficulty = st.session_state.difficulty
 
     # ── Sidebar ──
+    difficulty_icons = {"Beginner": "🟢", "Intermediate": "🟡", "Advanced": "🔴"}
+    
     with st.sidebar:
         st.markdown(
-            f"<div style='font-size:1rem; font-weight:600; color:#111827; margin-bottom:0.1rem;'>💬 InterviewAI</div>",
+            f"<div style='font-size:1.1rem; font-weight:700; color:#111827; margin-bottom:0.2rem;'>💬 InterviewAI</div>",
             unsafe_allow_html=True
         )
         st.markdown(
-            f"<div style='font-size:0.82rem; color:#6b7280; margin-bottom:1rem;'>Signed in as <b>{st.session_state.username}</b></div>",
+            f"<div style='font-size:0.82rem; color:#6b7280; margin-bottom:1.2rem;'>👤 <b>{st.session_state.username}</b></div>",
             unsafe_allow_html=True
         )
-        st.markdown("---")
+        st.markdown("<hr style='margin:0.5rem 0 1rem 0; border:none; border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
-        st.markdown("<div style='font-size:0.8rem; font-weight:600; color:#374151; margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em;'>Mode</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.75rem; font-weight:700; color:#6b7280; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>🎯 Interview Mode</div>", unsafe_allow_html=True)
         
-        # Show voice mode only if libraries are installed
         if VOICE_AVAILABLE:
-            mode_options = ["Text Interview", "Voice Interview", "MCQ Test"]
+            mode_options = ["💬 Text Interview", "🎤 Voice Interview", "📝 MCQ Test"]
             mode_index = 0 if st.session_state.interview_mode == "Text" else (1 if st.session_state.interview_mode == "Voice" else 2)
         else:
-            mode_options = ["Text Interview", "MCQ Test"]
+            mode_options = ["💬 Text Interview", "📝 MCQ Test"]
             mode_index = 0 if st.session_state.interview_mode == "Text" else 1
             if st.session_state.interview_mode == "Voice":
-                st.session_state.interview_mode = "Text"  # Fallback to text
+                st.session_state.interview_mode = "Text"
         
         interview_mode = st.radio(
             "Mode",
@@ -589,73 +657,126 @@ def show_chat():
             label_visibility="collapsed"
         )
         
-        if interview_mode == "Text Interview":
+        if "Text" in interview_mode:
             st.session_state.interview_mode = "Text"
-        elif interview_mode == "Voice Interview":
+        elif "Voice" in interview_mode:
             st.session_state.interview_mode = "Voice"
         else:
             st.session_state.interview_mode = "MCQ"
-        
-        # Show installation hint if voice not available
-        if not VOICE_AVAILABLE and interview_mode == "Text Interview":
-            st.info("💡 **Voice mode disabled**. Install voice libraries to enable:\n```\npip install gTTS SpeechRecognition pyaudio audio-recorder-streamlit\n```")
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='font-size:0.8rem; font-weight:600; color:#374151; margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em;'>Topic</div>", unsafe_allow_html=True)
-        topic_list = list(TOPICS.keys())
-        topic = st.selectbox("Topic", topic_list, index=topic_list.index(st.session_state.topic), label_visibility="collapsed")
-        st.session_state.topic = topic
+        st.markdown("<div style='font-size:0.75rem; font-weight:700; color:#6b7280; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>📚 Topic</div>", unsafe_allow_html=True)
+        topic_options = [f"{TOPICS[t]} {t}" for t in TOPICS.keys()]
+        current_topic_display = f"{TOPICS[st.session_state.topic]} {st.session_state.topic}"
+        selected_topic = st.selectbox(
+            "Topic", 
+            topic_options, 
+            index=topic_options.index(current_topic_display),
+            label_visibility="collapsed"
+        )
+        for t in TOPICS.keys():
+            if t in selected_topic:
+                st.session_state.topic = t
+                topic = t
+                break
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='font-size:0.8rem; font-weight:600; color:#374151; margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em;'>Difficulty</div>", unsafe_allow_html=True)
-        difficulty = st.selectbox("Difficulty", DIFFICULTIES, index=DIFFICULTIES.index(st.session_state.difficulty), label_visibility="collapsed")
-        st.session_state.difficulty = difficulty
+        st.markdown("<div style='font-size:0.75rem; font-weight:700; color:#6b7280; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>⚡ Difficulty</div>", unsafe_allow_html=True)
+        difficulty_options = [f"{difficulty_icons[d]} {d}" for d in DIFFICULTIES]
+        current_diff_display = f"{difficulty_icons[st.session_state.difficulty]} {st.session_state.difficulty}"
+        selected_difficulty = st.selectbox(
+            "Difficulty", 
+            difficulty_options, 
+            index=difficulty_options.index(current_diff_display),
+            label_visibility="collapsed"
+        )
+        for d in DIFFICULTIES:
+            if d in selected_difficulty:
+                st.session_state.difficulty = d
+                difficulty = d
+                break
 
         if st.session_state.interview_mode == "Text":
-            mode_tag = "RAG Mode" if has_resources(topic) else "LLM Mode"
+            mode_tag = "🔍 RAG Mode" if has_resources(topic) else "🧠 LLM Mode"
             st.markdown(
-                f"<div style='font-size:0.78rem; color:#6b7280; margin-top:0.5rem;'>Source: {mode_tag}</div>",
+                f"<div style='font-size:0.78rem; color:#6b7280; margin-top:0.6rem; padding:0.4rem 0.6rem; background:#f9fafb; border-radius:6px; text-align:center;'>{mode_tag}</div>",
                 unsafe_allow_html=True
             )
 
-        st.markdown("---")
+        st.markdown("<hr style='margin:1rem 0; border:none; border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
-        # Stats
         st.markdown(
-            f"<div style='font-size:0.82rem; color:#374151;'>Questions answered: <b>{st.session_state.question_count}</b></div>",
+            f"<div style='background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:1rem; border-radius:10px; margin-bottom:1rem;'>" 
+            f"<div style='color:#ffffff; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;'>📊 Progress</div>"
+            f"<div style='color:#ffffff; font-size:1.4rem; font-weight:700;'>{st.session_state.question_count}</div>"
+            f"<div style='color:rgba(255,255,255,0.8); font-size:0.8rem;'>Questions Answered</div>"
+            f"</div>",
             unsafe_allow_html=True
         )
+        
         if st.session_state.interview_mode == "MCQ" and st.session_state.total_questions > 0:
             accuracy = (st.session_state.score / st.session_state.total_questions) * 100
             st.markdown(
-                f"<div style='font-size:0.82rem; color:#374151; margin-top:0.3rem;'>Score: <b>{st.session_state.score}/{st.session_state.total_questions}</b> &nbsp;·&nbsp; {accuracy:.0f}%</div>",
+                f"<div style='background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding:1rem; border-radius:10px; margin-bottom:1rem;'>" 
+                f"<div style='color:#ffffff; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;'>🎯 Score</div>"
+                f"<div style='color:#ffffff; font-size:1.4rem; font-weight:700;'>{st.session_state.score}/{st.session_state.total_questions}</div>"
+                f"<div style='color:rgba(255,255,255,0.8); font-size:0.8rem;'>Accuracy: {accuracy:.0f}%</div>"
+                f"</div>",
                 unsafe_allow_html=True
             )
             st.progress(accuracy / 100)
 
-        st.markdown("---")
+        st.markdown("<hr style='margin:1rem 0; border:none; border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
 
-        if st.button("New Interview", use_container_width=True):
+        if st.button("🔄 New Interview", use_container_width=True, key="new_interview_btn"):
+            # End current session
+            if st.session_state.current_session_id:
+                end_session(
+                    st.session_state.current_session_id,
+                    st.session_state.score,
+                    st.session_state.total_questions
+                )
+            # Reset all interview state including voice
             st.session_state.history = []
             st.session_state.interview_started = False
             st.session_state.question_count = 0
             st.session_state.score = 0
             st.session_state.total_questions = 0
             st.session_state.pending_answer = None
+            st.session_state.current_session_id = None
+            # Reset voice-specific state
+            if 'voice_history' in st.session_state:
+                st.session_state.voice_history = []
+            if 'voice_started' in st.session_state:
+                st.session_state.voice_started = False
+            if 'voice_question_count' in st.session_state:
+                st.session_state.voice_question_count = 0
             st.rerun()
 
-        if st.button("Sign Out", use_container_width=True):
+        if st.button("📋 History", use_container_width=True, key="history_btn"):
+            st.session_state.show_history = not st.session_state.show_history
+            st.rerun()
+
+        if st.button("→ Sign Out", use_container_width=True, key="signout_btn"):
+            # End current session before logout
+            if st.session_state.current_session_id:
+                end_session(
+                    st.session_state.current_session_id,
+                    st.session_state.score,
+                    st.session_state.total_questions
+                )
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
     # ── Header ──
-    mode_label = "MCQ Test" if st.session_state.interview_mode == "MCQ" else ("Voice Interview" if st.session_state.interview_mode == "Voice" else "Text Interview")
+    mode_label = "📝 MCQ Test" if st.session_state.interview_mode == "MCQ" else ("🎤 Voice Interview" if st.session_state.interview_mode == "Voice" else "💬 Text Interview")
     st.markdown(
-        f"<div style='font-size:0.85rem; color:#6b7280; padding:0.5rem 0 0.25rem 0;'>"
-        f"{TOPICS.get(topic, '')} <b style='color:#111827'>{topic}</b> &nbsp;·&nbsp; {difficulty} &nbsp;·&nbsp; {mode_label}"
+        f"<div style='font-size:0.9rem; color:#6b7280; padding:0.5rem 0 0.25rem 0;'>"
+        f"{TOPICS.get(topic, '')} <b style='color:#111827'>{topic}</b> &nbsp;·&nbsp; "
+        f"{difficulty_icons.get(difficulty, '')} <b style='color:#111827'>{difficulty}</b> &nbsp;·&nbsp; {mode_label}"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -664,6 +785,11 @@ def show_chat():
     # ── Voice Interview Mode ──
     if st.session_state.interview_mode == "Voice":
         if VOICE_AVAILABLE:
+            # Create session if not exists (before showing voice interview)
+            if not st.session_state.current_session_id:
+                st.session_state.current_session_id = create_session(
+                    st.session_state.user_id, topic, difficulty, st.session_state.interview_mode
+                )
             show_voice_interview(st.session_state.username, topic, difficulty, get_system_prompt, ask_groq)
             return
         else:
@@ -674,10 +800,121 @@ def show_chat():
                 st.session_state.interview_mode = "Text"
                 st.rerun()
             return
+    
+    # ── Show History ──
+    if st.session_state.show_history:
+        st.markdown("### 📜 Interview History")
+        st.markdown("---")
+        
+        sessions = get_user_sessions(st.session_state.user_id)
+        
+        if not sessions:
+            st.info("No interview history yet. Start your first interview!")
+        else:
+            for session in sessions:
+                # Unpack: id, topic, difficulty, mode, score, total_questions, started_at, ended_at
+                session_id, topic_name, difficulty_level, mode, score, total, start_time, end_time = session
+                
+                # Format time - handle different formats
+                try:
+                    if isinstance(start_time, str):
+                        # Try different datetime formats
+                        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
+                            try:
+                                start_dt = datetime.strptime(start_time, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        else:
+                            # If no format works, use current time
+                            start_dt = datetime.now()
+                    else:
+                        start_dt = start_time
+                    
+                    formatted_time = start_dt.strftime("%b %d, %Y • %I:%M %p")
+                except Exception as e:
+                    formatted_time = str(start_time)[:16]
+                
+                # Calculate duration if ended
+                duration = ""
+                if end_time:
+                    try:
+                        if isinstance(end_time, str):
+                            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
+                                try:
+                                    end_dt = datetime.strptime(end_time, fmt)
+                                    break
+                                except ValueError:
+                                    continue
+                        else:
+                            end_dt = end_time
+                        
+                        duration_mins = int((end_dt - start_dt).total_seconds() / 60)
+                        if duration_mins > 0:
+                            duration = f" • {duration_mins} min"
+                    except Exception:
+                        pass
+                
+                # Score display
+                score_display = ""
+                if score is not None and total is not None and total > 0:
+                    accuracy = (score / total) * 100
+                    score_display = f" • Score: {score}/{total} ({accuracy:.0f}%)"
+                
+                # Create expandable session card
+                with st.expander(f"🎯 {topic_name} - {difficulty_level} ({mode}) - {formatted_time}"):
+                    st.markdown(f"**Started:** {formatted_time}{duration}{score_display}")
+                    
+                    # Get conversation
+                    conversation = get_session_conversation(session_id)
+                    
+                    if conversation:
+                        st.markdown("**Conversation:**")
+                        for role, content, timestamp in conversation:
+                            avatar = "🤖" if role == "assistant" else "👤"
+                            with st.chat_message(role, avatar=avatar):
+                                st.markdown(content)
+                    else:
+                        st.info("No conversation recorded for this session.")
+                    
+                    # Option to load this session
+                    if st.button("📥 Load This Session", key=f"load_{session_id}"):
+                        st.session_state.show_history = False
+                        st.session_state.current_session_id = session_id
+                        st.session_state.topic = topic_name
+                        st.session_state.difficulty = difficulty_level
+                        st.session_state.interview_mode = mode
+                        st.session_state.interview_started = True
+                        
+                        # Load conversation into history
+                        st.session_state.history = []
+                        for role, content, timestamp in conversation:
+                            st.session_state.history.append({"role": role, "content": content})
+                        
+                        st.session_state.question_count = len([m for m in conversation if m[0] == "assistant"])
+                        if score is not None:
+                            st.session_state.score = score
+                        if total is not None:
+                            st.session_state.total_questions = total
+                        
+                        st.rerun()
+        
+        st.markdown("---")
+        if st.button("← Back to Interview"):
+            st.session_state.show_history = False
+            st.rerun()
+        
+        return
 
     # ── Start Interview ──
     if not st.session_state.interview_started:
-        # Pre-generate first question immediately without spinner
+        # Create new session in database
+        if not st.session_state.current_session_id:
+            st.session_state.current_session_id = create_session(
+                st.session_state.user_id, topic, difficulty, st.session_state.interview_mode
+            )
+            print(f"DEBUG: Created new session ID: {st.session_state.current_session_id}")
+        
         if st.session_state.interview_mode == "MCQ":
             start_msg = f"Start a {difficulty} level {topic} MCQ test. Generate the first multiple choice question."
         elif st.session_state.interview_mode == "Voice":
@@ -689,6 +926,11 @@ def show_chat():
         st.session_state.history = [{"role": "assistant", "content": response}]
         st.session_state.interview_started = True
         st.session_state.question_count = 1
+        
+        # Save to database
+        print(f"DEBUG: Saving first message to session {st.session_state.current_session_id}")
+        result = save_message(st.session_state.current_session_id, "assistant", response)
+        print(f"DEBUG: Save result: {result}")
 
     # ── Chat History ──
     for msg in st.session_state.history:
@@ -751,11 +993,15 @@ def show_chat():
         st.session_state.pending_answer = None
         
         st.session_state.history.append({"role": "user", "content": user_input})
+        print(f"DEBUG: Saving user message to session {st.session_state.current_session_id}")
+        save_message(st.session_state.current_session_id, "user", user_input)
         
         with st.spinner("Checking answer..."):
             system, _ = get_system_prompt(user_input, topic, difficulty, st.session_state.interview_mode)
             response = ask_groq(system, st.session_state.history)
             st.session_state.history.append({"role": "assistant", "content": response})
+            print(f"DEBUG: Saving assistant message to session {st.session_state.current_session_id}")
+            save_message(st.session_state.current_session_id, "assistant", response)
             st.session_state.question_count += 1
             
             if st.session_state.interview_mode == "MCQ":
@@ -777,11 +1023,13 @@ def show_chat():
             return
 
         st.session_state.history.append({"role": "user", "content": user_input})
+        save_message(st.session_state.current_session_id, "user", user_input)
 
         with st.spinner("Thinking..."):
             system, _ = get_system_prompt(user_input, topic, difficulty, st.session_state.interview_mode)
             response = ask_groq(system, st.session_state.history)
             st.session_state.history.append({"role": "assistant", "content": response})
+            save_message(st.session_state.current_session_id, "assistant", response)
             st.session_state.question_count += 1
 
             if st.session_state.interview_mode == "MCQ":

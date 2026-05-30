@@ -119,14 +119,23 @@ def create_session(user_id, topic, difficulty, mode):
 
 def save_message(session_id, role, content):
     """Save a conversation message"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO conversation_history (session_id, role, content) VALUES (?, ?, ?)",
-        (session_id, role, content)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        if not session_id:
+            print(f"WARNING: Attempted to save message without session_id")
+            return False
+            
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO conversation_history (session_id, role, content) VALUES (?, ?, ?)",
+            (session_id, role, content)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"ERROR saving message: {e}")
+        return False
 
 def end_session(session_id, score=0, total_questions=0):
     """End an interview session"""

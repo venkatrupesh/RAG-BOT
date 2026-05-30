@@ -2,6 +2,7 @@
 
 import streamlit as st
 import streamlit.components.v1 as components
+from database.db_manager import save_message
 
 def show_voice_interview(username, topic, difficulty, get_system_prompt_func, ask_groq_func):
     """
@@ -23,11 +24,35 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
         greeting = f"Hi {username}, welcome to your {topic} interview at {difficulty} level. Are you ready to begin?"
         st.session_state.voice_history = [{"role": "assistant", "content": greeting}]
         st.session_state.voice_started = True
+        # Save greeting to database
+        if st.session_state.current_session_id:
+            save_message(st.session_state.current_session_id, "assistant", greeting)
     
     # Display conversation history
-    st.markdown("### 🎙️ Voice Interview")
-    st.markdown(f"**Topic:** {topic} | **Difficulty:** {difficulty}")
-    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; margin-bottom: 1.5rem;'>
+        <h2 style='color: #111827; font-weight: 700; margin-bottom: 0.5rem;'>🎙️ Voice Interview</h2>
+        <p style='color: #6b7280; font-size: 0.95rem;'><b>{topic}</b> • {difficulty} Level</p>
+    </div>
+    """.format(topic=topic, difficulty=difficulty), unsafe_allow_html=True)
+    
+    st.markdown("<hr style='margin: 1rem 0 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;'>", unsafe_allow_html=True)
+    
+    # Voice Component Section
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%); 
+                padding: 1.5rem; 
+                border-radius: 16px; 
+                border: 1px solid #e5e7eb;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+                margin-bottom: 1.5rem;'>
+        <div style='text-align: center; color: #6b7280; font-size: 0.85rem; 
+                    font-weight: 600; text-transform: uppercase; 
+                    letter-spacing: 0.05em; margin-bottom: 1rem;'>
+            🎤 Voice Input
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Render voice component first
     last_bot_message = ""
@@ -44,7 +69,19 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
     render_auto_voice_component(clean_text, st.session_state.voice_question_count)
     
     # Voice input and submit button
-    st.markdown("**Your Answer:**")
+    st.markdown("""
+    <div style='background: #ffffff; 
+                padding: 1.25rem; 
+                border-radius: 12px; 
+                border: 1px solid #e5e7eb;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                margin-bottom: 1.5rem;'>
+        <div style='color: #374151; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem;'>
+            📝 Your Answer
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     col1, col2 = st.columns([5, 1])
     with col1:
         voice_input = st.text_input(
@@ -65,6 +102,9 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
     if voice_submit and voice_input and voice_input.strip():
         # Add user answer to conversation
         st.session_state.voice_history.append({"role": "user", "content": voice_input})
+        # Save user message to database
+        if st.session_state.current_session_id:
+            save_message(st.session_state.current_session_id, "user", voice_input)
         
         try:
             if st.session_state.voice_question_count == 0:
@@ -79,6 +119,9 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
             # Get bot response
             response = ask_groq_func(system_prompt, messages)
             st.session_state.voice_history.append({"role": "assistant", "content": response})
+            # Save assistant message to database
+            if st.session_state.current_session_id:
+                save_message(st.session_state.current_session_id, "assistant", response)
             st.session_state.voice_question_count += 1
             
             st.rerun()
@@ -86,21 +129,68 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
         except Exception as e:
             st.error(f"Error: {str(e)}")
     
-    st.markdown("---")
+    # Conversation History Section
+    st.markdown("""
+    <div style='margin-top: 2rem; margin-bottom: 1rem;'>
+        <div style='color: #374151; font-size: 0.85rem; font-weight: 600; 
+                    text-transform: uppercase; letter-spacing: 0.05em; 
+                    padding-bottom: 0.75rem; border-bottom: 2px solid #e5e7eb;'>
+            💬 Conversation History
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Show conversation history
-    for msg in st.session_state.voice_history:
-        role = msg["role"]
-        avatar = "🤖" if role == "assistant" else "👤"
-        with st.chat_message(role, avatar=avatar):
-            st.markdown(msg["content"])
+    # Show conversation history in structured cards
+    if st.session_state.voice_history:
+        for idx, msg in enumerate(st.session_state.voice_history):
+            role = msg["role"]
+            content = msg["content"]
+            
+            if role == "assistant":
+                st.markdown("""
+                <div style='background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                            padding: 1.25rem;
+                            border-radius: 12px;
+                            border-left: 4px solid #3b82f6;
+                            margin-bottom: 1rem;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>
+                    <div style='display: flex; align-items: center; margin-bottom: 0.5rem;'>
+                        <span style='font-size: 1.5rem; margin-right: 0.75rem;'>🤖</span>
+                        <span style='color: #1e40af; font-weight: 600; font-size: 0.85rem;'>AI Interviewer</span>
+                    </div>
+                    <div style='color: #1f2937; line-height: 1.6; font-size: 0.95rem;'>
+                """, unsafe_allow_html=True)
+                st.markdown(content)
+                st.markdown("</div></div>", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style='background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+                            padding: 1.25rem;
+                            border-radius: 12px;
+                            border-left: 4px solid #6b7280;
+                            margin-bottom: 1rem;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>
+                    <div style='display: flex; align-items: center; margin-bottom: 0.5rem;'>
+                        <span style='font-size: 1.5rem; margin-right: 0.75rem;'>👤</span>
+                        <span style='color: #374151; font-weight: 600; font-size: 0.85rem;'>You</span>
+                    </div>
+                    <div style='color: #1f2937; line-height: 1.6; font-size: 0.95rem;'>
+                """, unsafe_allow_html=True)
+                st.markdown(content)
+                st.markdown("</div></div>", unsafe_allow_html=True)
+    else:
+        st.info("👋 Start speaking to begin your interview!")
     
-    # Manual fallback
-    with st.expander("💬 Type answer manually (if voice fails)"):
+    # Manual fallback - styled
+    st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
+    with st.expander("📝 Type answer manually (if voice fails)", expanded=False):
         manual_input = st.text_input("Your answer:", key=f"manual_{st.session_state.voice_question_count}")
         if st.button("Submit", key=f"submit_{st.session_state.voice_question_count}"):
             if manual_input:
                 st.session_state.voice_history.append({"role": "user", "content": manual_input})
+                # Save user message to database
+                if st.session_state.current_session_id:
+                    save_message(st.session_state.current_session_id, "user", manual_input)
                 
                 try:
                     if st.session_state.voice_question_count == 0:
@@ -113,6 +203,9 @@ def show_voice_interview(username, topic, difficulty, get_system_prompt_func, as
                     
                     response = ask_groq_func(system_prompt, messages)
                     st.session_state.voice_history.append({"role": "assistant", "content": response})
+                    # Save assistant message to database
+                    if st.session_state.current_session_id:
+                        save_message(st.session_state.current_session_id, "assistant", response)
                     st.session_state.voice_question_count += 1
                     
                     st.rerun()
