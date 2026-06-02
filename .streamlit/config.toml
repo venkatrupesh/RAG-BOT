@@ -1,24 +1,7 @@
 [server]
-maxUploadSize = 5
+headless = true
 enableCORS = false
-enableXsrfProtection = false
+port = 8501
 
 [browser]
 gatherUsageStats = false
-serverAddress = "localhost"
-serverPort = 8501
-
-[runner]
-magicEnabled = false
-fastReruns = true
-
-[client]
-showErrorDetails = false
-toolbarMode = "minimal"
-
-[theme]
-base = "light"
-primaryColor = "#111827"
-backgroundColor = "#f9fafb"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#111827"
