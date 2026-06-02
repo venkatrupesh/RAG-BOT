@@ -1,10 +1,20 @@
 # ingestion/loader.py
 
 import os
-from langchain_community.document_loaders import PyPDFLoader
+
+try:
+    from langchain_community.document_loaders import PyPDFLoader
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    print("langchain_community not available")
 
 def load_pdf(file_path: str):
     """Load a PDF file and return list of pages"""
+    
+    if not LANGCHAIN_AVAILABLE:
+        print("⚠️ PyPDFLoader not available. Install langchain-community to use this feature.")
+        return []
     
     # Check if file exists
     if not os.path.exists(file_path):

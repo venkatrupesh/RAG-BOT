@@ -1,11 +1,21 @@
 # ingestion/chunker.py
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    print("langchain_text_splitters not available")
+
 import sys
 sys.path.append(".")
 from ingestion.loader import load_pdf
 
 def chunk_documents(file_path: str, chunk_size=512, chunk_overlap=50):
     """Split PDF pages into smaller chunks"""
+    
+    if not LANGCHAIN_AVAILABLE:
+        print("⚠️ Text splitter not available.")
+        return []
     
     # Step 1: Load the PDF
     pages = load_pdf(file_path)
