@@ -642,11 +642,11 @@ def show_chat():
         st.markdown("<div style='font-size:0.75rem; font-weight:700; color:#6b7280; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>🎯 Interview Mode</div>", unsafe_allow_html=True)
         
         if VOICE_AVAILABLE:
-            mode_options = ["💬 Text Interview", "🎤 Voice Interview", "📝 MCQ Test"]
-            mode_index = 0 if st.session_state.interview_mode == "Text" else (1 if st.session_state.interview_mode == "Voice" else 2)
+            mode_options = ["💬 Text Interview", "🎤 Voice Interview", "📝 MCQ Test", "📊 Analytics Dashboard"]
+            mode_index = 0 if st.session_state.interview_mode == "Text" else (1 if st.session_state.interview_mode == "Voice" else (2 if st.session_state.interview_mode == "MCQ" else 3))
         else:
-            mode_options = ["💬 Text Interview", "📝 MCQ Test"]
-            mode_index = 0 if st.session_state.interview_mode == "Text" else 1
+            mode_options = ["💬 Text Interview", "📝 MCQ Test", "📊 Analytics Dashboard"]
+            mode_index = 0 if st.session_state.interview_mode == "Text" else (1 if st.session_state.interview_mode == "MCQ" else 2)
             if st.session_state.interview_mode == "Voice":
                 st.session_state.interview_mode = "Text"
         
@@ -661,6 +661,8 @@ def show_chat():
             st.session_state.interview_mode = "Text"
         elif "Voice" in interview_mode:
             st.session_state.interview_mode = "Voice"
+        elif "Analytics" in interview_mode:
+            st.session_state.interview_mode = "Analytics"
         else:
             st.session_state.interview_mode = "MCQ"
 
@@ -716,12 +718,12 @@ def show_chat():
             unsafe_allow_html=True
         )
         
-        if st.session_state.interview_mode == "MCQ" and st.session_state.total_questions > 0:
+        if st.session_state.total_questions > 0:
             accuracy = (st.session_state.score / st.session_state.total_questions) * 100
             st.markdown(
                 f"<div style='background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding:1rem; border-radius:10px; margin-bottom:1rem;'>" 
                 f"<div style='color:#ffffff; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;'>🎯 Score</div>"
-                f"<div style='color:#ffffff; font-size:1.4rem; font-weight:700;'>{st.session_state.score}/{st.session_state.total_questions}</div>"
+                f"<div style='color:#ffffff; font-size:1.4rem; font-weight:700;'>{int(st.session_state.score)}/{st.session_state.total_questions}</div>"
                 f"<div style='color:rgba(255,255,255,0.8); font-size:0.8rem;'>Accuracy: {accuracy:.0f}%</div>"
                 f"</div>",
                 unsafe_allow_html=True
@@ -772,7 +774,7 @@ def show_chat():
             st.rerun()
 
     # ── Header ──
-    mode_label = "📝 MCQ Test" if st.session_state.interview_mode == "MCQ" else ("🎤 Voice Interview" if st.session_state.interview_mode == "Voice" else "💬 Text Interview")
+    mode_label = "📝 MCQ Test" if st.session_state.interview_mode == "MCQ" else ("🎤 Voice Interview" if st.session_state.interview_mode == "Voice" else ("📊 Analytics Dashboard" if st.session_state.interview_mode == "Analytics" else "💬 Text Interview"))
     st.markdown(
         f"<div style='font-size:0.9rem; color:#6b7280; padding:0.5rem 0 0.25rem 0;'>"
         f"{TOPICS.get(topic, '')} <b style='color:#111827'>{topic}</b> &nbsp;·&nbsp; "
@@ -781,6 +783,20 @@ def show_chat():
         unsafe_allow_html=True
     )
     st.markdown("<hr style='margin:0 0 1rem 0;'>", unsafe_allow_html=True)
+    
+    # ── Analytics Dashboard Mode ──
+    if st.session_state.interview_mode == "Analytics":
+        try:
+            from ui.analytics_dashboard import render_analytics_dashboard
+            render_analytics_dashboard(st.session_state.user_id, get_user_sessions, ask_groq)
+            return
+        except Exception as e:
+            st.error(f"❌ Error loading analytics: {str(e)}")
+            st.info("💡 Try switching to another mode")
+            if st.button("Switch to Text Mode"):
+                st.session_state.interview_mode = "Text"
+                st.rerun()
+            return
     
     # ── Voice Interview Mode ──
     if st.session_state.interview_mode == "Voice":
@@ -815,43 +831,31 @@ def show_chat():
                 # Unpack: id, topic, difficulty, mode, score, total_questions, started_at, ended_at
                 session_id, topic_name, difficulty_level, mode, score, total, start_time, end_time = session
                 
-                # Format time - handle different formats
+                # Format time - show exact timestamp from database
                 try:
-                    if isinstance(start_time, str):
-                        # Try different datetime formats
-                        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
-                            try:
-                                start_dt = datetime.strptime(start_time, fmt)
-                                break
-                            except ValueError:
-                                continue
-                        else:
-                            # If no format works, use current time
-                            start_dt = datetime.now()
+                    # SQLite returns timestamps as strings in format: YYYY-MM-DD HH:MM:SS
+                    if start_time:
+                        start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                        formatted_time = start_dt.strftime("%b %d, %Y • %I:%M %p")
                     else:
-                        start_dt = start_time
-                    
-                    formatted_time = start_dt.strftime("%b %d, %Y • %I:%M %p")
+                        formatted_time = "Unknown time"
                 except Exception as e:
-                    formatted_time = str(start_time)[:16]
+                    # Fallback: show raw timestamp
+                    formatted_time = str(start_time) if start_time else "Unknown time"
                 
                 # Calculate duration if ended
                 duration = ""
-                if end_time:
+                if end_time and start_time:
                     try:
-                        if isinstance(end_time, str):
-                            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
-                                try:
-                                    end_dt = datetime.strptime(end_time, fmt)
-                                    break
-                                except ValueError:
-                                    continue
-                        else:
-                            end_dt = end_time
-                        
+                        start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                        end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
                         duration_mins = int((end_dt - start_dt).total_seconds() / 60)
                         if duration_mins > 0:
                             duration = f" • {duration_mins} min"
+                        elif duration_mins == 0:
+                            duration_secs = int((end_dt - start_dt).total_seconds())
+                            if duration_secs > 0:
+                                duration = f" • {duration_secs} sec"
                     except Exception:
                         pass
                 
@@ -1008,6 +1012,20 @@ def show_chat():
                 st.session_state.total_questions += 1
                 if "✅ Correct" in response or "Correct!" in response:
                     st.session_state.score += 1
+            else:
+                # Track score for Text/Voice interviews
+                st.session_state.total_questions += 1
+                if "✅" in response or "Correct" in response.split("\n")[0]:
+                    st.session_state.score += 1
+                elif "⚠️" in response or "Partial" in response:
+                    st.session_state.score += 0.5
+            
+            # Update session continuously
+            end_session(
+                st.session_state.current_session_id,
+                int(st.session_state.score),
+                st.session_state.total_questions
+            )
         
         st.rerun()
     
@@ -1036,6 +1054,20 @@ def show_chat():
                 st.session_state.total_questions += 1
                 if "✅ Correct" in response or "Correct!" in response:
                     st.session_state.score += 1
+            else:
+                # Track score for Text/Voice interviews based on feedback
+                st.session_state.total_questions += 1
+                if "✅" in response or "Correct" in response.split("\n")[0]:
+                    st.session_state.score += 1
+                elif "⚠️" in response or "Partial" in response:
+                    st.session_state.score += 0.5
+            
+            # Update session continuously
+            end_session(
+                st.session_state.current_session_id,
+                int(st.session_state.score),
+                st.session_state.total_questions
+            )
 
         st.rerun()
 

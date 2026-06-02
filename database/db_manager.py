@@ -101,12 +101,13 @@ def get_user_by_id(user_id):
     return user
 
 def create_session(user_id, topic, difficulty, mode):
-    """Create a new interview session"""
+    """Create a new interview session with local timestamp"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
-        "INSERT INTO interview_sessions (user_id, topic, difficulty, mode) VALUES (?, ?, ?, ?)",
-        (user_id, topic, difficulty, mode)
+        "INSERT INTO interview_sessions (user_id, topic, difficulty, mode, started_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, topic, difficulty, mode, local_time)
     )
     conn.commit()
     session_id = cursor.lastrowid
@@ -118,7 +119,7 @@ def create_session(user_id, topic, difficulty, mode):
     return session_id
 
 def save_message(session_id, role, content):
-    """Save a conversation message"""
+    """Save a conversation message with local timestamp"""
     try:
         if not session_id:
             print(f"WARNING: Attempted to save message without session_id")
@@ -126,9 +127,10 @@ def save_message(session_id, role, content):
             
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute(
-            "INSERT INTO conversation_history (session_id, role, content) VALUES (?, ?, ?)",
-            (session_id, role, content)
+            "INSERT INTO conversation_history (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            (session_id, role, content, local_time)
         )
         conn.commit()
         conn.close()
@@ -138,12 +140,13 @@ def save_message(session_id, role, content):
         return False
 
 def end_session(session_id, score=0, total_questions=0):
-    """End an interview session"""
+    """End an interview session with local timestamp"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
-        "UPDATE interview_sessions SET ended_at = CURRENT_TIMESTAMP, score = ?, total_questions = ? WHERE id = ?",
-        (score, total_questions, session_id)
+        "UPDATE interview_sessions SET ended_at = ?, score = ?, total_questions = ? WHERE id = ?",
+        (local_time, score, total_questions, session_id)
     )
     conn.commit()
     conn.close()
