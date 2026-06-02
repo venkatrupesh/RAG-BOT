@@ -10,11 +10,43 @@ sys.path.append(".")
 
 from groq import Groq
 from dotenv import load_dotenv
-from retrieval.retriever import retrieve_context
-from database.db_manager import (
-    get_user, create_session, save_message, end_session, 
-    get_user_sessions, get_session_conversation
-)
+
+# Optional imports - handle gracefully if not available
+try:
+    from retrieval.retriever import retrieve_context
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    print("RAG libraries not installed. RAG mode will be disabled.")
+    def retrieve_context(query, k=5):
+        return "No context available"
+
+try:
+    from database.db_manager import (
+        get_user, create_session, save_message, end_session, 
+        get_user_sessions, get_session_conversation
+    )
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+    print("Database not available. Using in-memory storage.")
+    # Simple fallback functions
+    def get_user(username):
+        users = load_users()
+        if username in users:
+            user_data = users[username]
+            return (username, username, user_data["password"], user_data.get("email", ""))
+        return None
+    def create_session(user_id, topic, difficulty, mode):
+        return f"session_{datetime.now().timestamp()}"
+    def save_message(session_id, role, content):
+        return True
+    def end_session(session_id, score, total):
+        return True
+    def get_user_sessions(user_id, limit=100):
+        return []
+    def get_session_conversation(session_id):
+        return []
 
 # Try to import voice interview (optional)
 try:
@@ -511,6 +543,8 @@ def login_user(username: str, password: str) -> tuple[bool, str]:
 
 # ── Interview Logic ──
 def has_resources(topic: str) -> bool:
+    if not RAG_AVAILABLE:
+        return False
     return topic.lower() in TOPICS_WITH_RESOURCES
 
 def get_system_prompt(user_input: str, topic: str, difficulty: str, mode: str = "Text") -> tuple[str, str]:
